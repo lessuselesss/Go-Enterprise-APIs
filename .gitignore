@@ -1,6 +1,6 @@
-.cursor/
-.direnv/
-.windsurf/
-result/
+.cursor
+.direnv
+.windsurf
+result
 .envrc
-target/
+target
