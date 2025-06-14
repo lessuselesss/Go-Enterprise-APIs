@@ -1,11 +1,11 @@
-package main
+package circular_test
 
 import (
 	"fmt"
 	"log"
 	"testing"
 
-	"circular-api/lib"
+	circular "circular-api/lib"
 )
 
 func TestCircularPackage(t *testing.T) {
