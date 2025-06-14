@@ -1,0 +1,396 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+---
+description: "Rules for the CEPAccount
+ class, which handles Circular blockchain account management, transaction creation, and network interaction. This class is the primary interface for interacting with a user's account on the Circular network."
+globs:
+  - "*src/cep_account.(js|mjs|cjs|php|py|java|rs|go)"
+alwaysApply: true
+---
+
+# IMPORTANT: RESTRICTED IMPLEMENTATION NOTICE
+
+**ONLY THE DEFINITIONS AND LOGIC STATED IN THIS DOCUMENT ARE TO BE USED IN THE DESIGNATED MODULE. ALL OTHER LOGIC IS PROHIBITED.**
+
+This document serves as the single source of truth for the CEPAccount implementation. Any deviation from the specified structure, methods, or logic is strictly prohibited. This includes:
+- Adding new fields or methods not explicitly defined
+- Modifying the behavior of existing methods
+- Implementing alternative transaction handling approaches
+- Adding additional dependencies beyond those specified
+- Changing the cryptographic standards (secp256k1 and SHA-256)
+- Altering the transaction ID generation logic
+- Modifying the nonce management system
+
+The implementation must exactly match the structure and behavior described in this document.
+
+# CEPAccount Class Documentation
+
+## Overview
+The CEPAccount class is responsible for managing a user's account on the Circular network, handling account state, transaction creation, signing, and network interaction.
+
+## Required Dependencies
+```pseudo
+// Cryptography
+REQUIRE message_digest
+REQUIRE digital_signature
+REQUIRE base64_encoding
+
+// Time and Date
+REQUIRE time_zone_utilities
+REQUIRE datetime_utilities
+
+// Data Structures
+REQUIRE hash_map
+REQUIRE map_utilities
+
+// Core Utilities
+REQUIRE helper_utilities
+REQUIRE network_utilitiesd
+```
+
+## Class Structure
+
+```pseudo
+CLASS CEPAccount
+    PRIVATE FIELDS:
+        address: STRING      // Account address
+        publicKey: STRING    // Public key of the account
+        info: OBJECT         // Additional account information
+        codeVersion: STRING  // Library version
+        lastError: STRING    // Last error message
+        nagUrl: STRING       // Network Access Gateway URL
+        networkNode: STRING  // Network node identifier
+        blockchain: STRING   // Target blockchain address
+        latestTxID: STRING   // Last successful transaction ID
+        nonce: INTEGER       // Transaction counter
+        data: OBJECT         // General purpose data storage
+        intervalSec: INTEGER // Polling interval for transaction outcome
+
+    CONSTRUCTOR:
+        INITIALIZE
+            SET address TO NULL
+            SET publicKey TO NULL
+            SET info TO NULL
+            SET codeVersion TO Helper.LIB_VERSION // Initialize with library version constant
+            SET lastError TO ""
+            SET nagUrl TO Helper.DEFAULT_NAG
+            SET networkNode TO ""
+            SET blockchain TO Helper.DEFAULT_CHAIN
+            SET latestTxID TO ""
+            SET nonce TO 0
+            SET data TO EMPTY_OBJECT
+            SET intervalSec TO 2
+
+    METHODS:
+        OPEN(accountAddress: STRING): BOOLEAN
+            // Initialize account with address
+            SET address TO accountAddress
+            RETURN TRUE
+
+        UPDATE_ACCOUNT(): BOOLEAN
+            // Fetch latest nonce from network
+            TRY
+                // Construct payload
+                payload = CREATE_MAP()
+                ADD_TO_MAP(payload, "Blockchain", HEX_FIX(blockchain))
+                ADD_TO_MAP(payload, "Address", HEX_FIX(address))
+                ADD_TO_MAP(payload, "Version", codeVersion)
+
+                // Fetch response from NAG
+                response = FETCH_FROM_NETWORK_POST(nagUrl + "Circular_GetWalletNonce_" + networkNode, SERIALIZE_TO_JSON(payload))
+                
+                IF response.Result == 200 AND response.Response.Nonce IS NOT NULL
+                    SET nonce TO response.Response.Nonce + 1
+                    RETURN TRUE
+                ELSE
+                    THROW "Invalid response format or missing Nonce field"
+            CATCH
+                SET lastError TO "Failed to update account"
+                RETURN FALSE
+
+        CLOSE()
+            // Clear account state
+            SET address TO NULL
+            SET publicKey TO NULL
+            SET info TO NULL
+            SET lastError TO ""
+            SET nagUrl TO Helper.DEFAULT_NAG
+            SET networkNode TO ""
+            SET blockchain TO Helper.DEFAULT_CHAIN
+            SET latestTxID TO ""
+            SET data TO EMPTY_OBJECT
+            SET intervalSec TO 2
+            SET nonce TO 0
+
+        SET_NETWORK(network: STRING): BOOLEAN
+            // Configure network environment
+            TRY
+                // Construct the URL with the network parameter
+                nagUrl_endpoint = CONCATENATE(Helper.NETWORK_URL, ENCODE_URI_COMPONENT(network))
+                
+                // Make the GET request
+                response = FETCH_FROM_NETWORK_GET(nagUrl_endpoint, {"Accept": "application/json"})
+                
+                // Check if the request was successful
+                IF NOT response.OK
+                    THROW "HTTP error! status: " + response.Status
+                
+                // Parse the JSON response
+                data = PARSE_JSON(response.Body)
+                
+                // Check if the status is success and URL exists
+                IF data.status == "success" AND data.url IS NOT NULL
+                    SET nagUrl TO data.url
+                    RETURN TRUE
+                ELSE
+                    THROW data.message OR "Failed to get URL"
+            CATCH
+                SET lastError TO "Failed to set network: " + ERROR_MESSAGE()
+                RETURN FALSE
+
+        SET_BLOCKCHAIN(chain: STRING)
+            SET blockchain TO chain
+
+        SUBMIT_CERTIFICATE(data: STRING, privateKey: STRING): BOOLEAN
+            // Create and submit transaction
+            TRY
+                // Create transaction payload object
+                payload_object = CREATE_MAP()
+                ADD_TO_MAP(payload_object, "Action", "CP_CERTIFICATE")
+                ADD_TO_MAP(payload_object, "Data", STRING_TO_HEX(data)) // Convert input data to hex
+
+                // Serialize payload object to JSON string and then to hex
+                json_string = SERIALIZE_TO_JSON(payload_object)
+                payload_hex = STRING_TO_HEX(json_string)
+                
+                // Generate transaction ID
+                timestamp = Helper.GET_FORMATTED_TIMESTAMP()
+                // Concatenate fields for transaction ID hashing. Note: address is included twice as per protocol.
+                txIdString = CONCATENATE(HEX_FIX(blockchain), HEX_FIX(address), HEX_FIX(address), payload_hex, nonce, timestamp)
+                txId = SHA256(txIdString)
+                
+                // Sign transaction ID
+                signature = SIGN_DATA(txId, privateKey)
+                
+                // Construct the full transaction object
+                transaction = CREATE_MAP()
+                ADD_TO_MAP(transaction, "ID", txId)
+                ADD_TO_MAP(transaction, "From", HEX_FIX(address))
+                ADD_TO_MAP(transaction, "To", HEX_FIX(address))
+                ADD_TO_MAP(transaction, "Timestamp", timestamp)
+                ADD_TO_MAP(transaction, "Payload", payload_hex)
+                ADD_TO_MAP(transaction, "Nonce", nonce)
+                ADD_TO_MAP(transaction, "Signature", signature)
+                ADD_TO_MAP(transaction, "Blockchain", HEX_FIX(blockchain))
+                ADD_TO_MAP(transaction, "Type", "C_TYPE_CERTIFICATE") // Specific transaction type
+                ADD_TO_MAP(transaction, "Version", codeVersion)
+
+                // Submit transaction to network
+                response = SUBMIT_TO_NETWORK(nagUrl + "Circular_AddTransaction_" + networkNode, SERIALIZE_TO_JSON(transaction))
+                
+                IF response.success
+                    SET latestTxID TO txId
+                    INCREMENT nonce
+                    RETURN TRUE
+                ELSE
+                    SET lastError TO response.error
+                    RETURN FALSE
+            CATCH
+                SET lastError TO "Transaction submission failed"
+                RETURN FALSE
+
+        GET_TRANSACTION_OUTCOME(txId: STRING, timeoutSec: INTEGER): STRING
+            // Poll for transaction status with a timeout
+            TRY
+                SET startTime TO CURRENT_TIMESTAMP()
+                SET intervalMs TO intervalSec * 1000 // Convert seconds to milliseconds
+                SET timeoutMs TO timeoutSec * 1000   // Convert seconds to milliseconds
+
+                LOOP_UNTIL_TIMEOUT:
+                    SET elapsedTime TO CURRENT_TIMESTAMP() - startTime
+                    IF elapsedTime > timeoutMs
+                        THROW "Timeout exceeded"
+
+                    // Fetch transaction details using getTransactionbyID
+                    response = GET_TRANSACTION_BY_ID(txId, 0, 10) // Assuming 0 and 10 are default block range for polling
+
+                    IF response.Result == 200 AND response.Response != "Transaction Not Found" AND response.Response.Status != "Pending"
+                        RETURN response.Response // Return the transaction response if confirmed
+                    ELSE
+                        SLEEP intervalMs // Continue polling after interval
+
+            CATCH
+                RETURN "Error" // Return "Error" on timeout or other failures
+
+        GET_TRANSACTION(block: STRING, txId: STRING): OBJECT
+            // Fetch transaction details by block and transaction ID
+            TRY
+                // Construct payload
+                payload = CREATE_MAP()
+                ADD_TO_MAP(payload, "Blockchain", HEX_FIX(blockchain))
+                ADD_TO_MAP(payload, "ID", HEX_FIX(txId))
+                ADD_TO_MAP(payload, "Start", STRING(block))
+                ADD_TO_MAP(payload, "End", STRING(block))
+                ADD_TO_MAP(payload, "Version", codeVersion)
+
+                // Fetch response from NAG
+                response = FETCH_FROM_NETWORK_POST(nagUrl + "Circular_GetTransactionbyID_" + networkNode, SERIALIZE_TO_JSON(payload))
+                
+                IF response.OK
+                    RETURN PARSE_JSON(response.Body)
+                ELSE
+                    THROW "Network response was not ok"
+            CATCH
+                SET lastError TO "Failed to fetch transaction"
+                RETURN NULL
+
+        GET_TRANSACTION_BY_ID(txId: STRING, startBlock: INTEGER, endBlock: INTEGER): OBJECT
+            // Fetch transaction details by transaction ID and block range
+            TRY
+                // Construct payload
+                payload = CREATE_MAP()
+                ADD_TO_MAP(payload, "Blockchain", HEX_FIX(blockchain))
+                ADD_TO_MAP(payload, "ID", HEX_FIX(txId))
+                ADD_TO_MAP(payload, "Start", STRING(startBlock))
+                ADD_TO_MAP(payload, "End", STRING(endBlock))
+                ADD_TO_MAP(payload, "Version", codeVersion)
+
+                // Fetch response from NAG
+                response = FETCH_FROM_NETWORK_POST(nagUrl + "Circular_GetTransactionbyID_" + networkNode, SERIALIZE_TO_JSON(payload))
+                
+                IF response.OK
+                    RETURN PARSE_JSON(response.Body)
+                ELSE
+                    THROW "Network response was not ok"
+            CATCH
+                SET lastError TO "Failed to fetch transaction by ID"
+                RETURN NULL
+
+        // Getters
+        GET_LAST_ERROR(): STRING
+            RETURN lastError
+
+        GET_LATEST_TX_ID(): STRING
+            RETURN latestTxID
+
+        GET_NONCE(): INTEGER
+            RETURN nonce
+
+        GET_ADDRESS(): STRING
+            RETURN address
+
+        GET_BLOCKCHAIN(): STRING
+            RETURN blockchain
+
+        GET_NAG_URL(): STRING
+            RETURN nagUrl
+
+    PRIVATE METHODS:
+        SIGN_DATA(data: STRING, privateKey: STRING): STRING
+            // Sign data using secp256k1 and SHA-256
+            TRY
+                signature = CREATE_SIGNATURE(data, privateKey)
+                RETURN Base64.encode(signature)
+            CATCH
+                THROW "Signing failed"
+```
+
+## Usage Guidelines
+
+1. Account Lifecycle:
+   - Use OPEN() to initialize account state
+   - Use UPDATE_ACCOUNT() to sync nonce
+   - Use CLOSE() to clear account data
+
+2. Network Configuration:
+   - Use SET_NETWORK() to configure environment
+   - Use SET_BLOCKCHAIN() to set target chain
+
+3. Transaction Management:
+   - Use SUBMIT_CERTIFICATE() for data certification
+   - Use GET_TRANSACTION_OUTCOME() to check status
+   - Use GET_TRANSACTION() to fetch details
+
+## Error Handling
+
+- All network operations include error handling
+- Errors are stored in lastError field
+- Methods return FALSE or NULL on failure
+
+## Dependencies
+
+- Helper utilities for constants and utilities
+- Cryptography utilities for digital signatures
+- Base64 encoding utilities
+- Network utilities for API communication
+
+# Guide to Using the CEPAccount Class
+
+This document outlines the purpose, correct usage, and critical invariants of the `CEPAccount` class. Adhere to these rules to ensure the integrity of account interactions and transaction submissions.
+
+## Overall Purpose
+
+The `CEPAccount` class is responsible for managing a user's account on the Circular network. Its primary functions include:
+1.  Initializing and managing the account state (address, nonce).
+2.  Configuring network endpoints.
+3.  Creating, signing, and submitting transactions, specifically for data certification.
+4.  Querying the network for transaction status.
+
+It relies on the `Helper` utilities for critical utility functions and constants. Do not replicate or alter logic that belongs in the `Helper` utilities.
+
+## Core Concepts & Invariants
+
+### 1. Account State
+
+-   **Opening an Account**: An account session **must** be started by calling the `open method` with a valid account address. Nearly all other methods will fail if the account is not in an "open" state (i.e., if the `address` field is null).
+-   **Closing an Account**: The `close method` must be used to terminate an account session. This method securely clears all account-related data from the object instance.
+
+### 2. Nonce Management (Critical)
+
+-   The `nonce` is a transaction counter that prevents replay attacks and ensures transaction order.
+-   **Fetching the Nonce**: The `nonce` is retrieved from the network by calling the `update account method`. This method **must** be called before submitting a new transaction to ensure the local nonce is synchronized with the network.
+-   **Incrementing the Nonce**: The `nonce` is **only** incremented automatically within the `submit certificate method` *after* a transaction has been successfully submitted to the network.
+-   **Prohibited Action**: **Never** modify the `nonce` field directly. Its value is strictly managed by the `update account` and `submit certificate` methods. Manual changes will lead to transaction failures.
+
+### 3. Cryptography and Signing
+
+-   **Signing Target**: The `sign data method` is a private helper used exclusively by the `submit certificate method`. It is designed to sign the **SHA-256 hash of the transaction ID**, not the raw payload data. This is a fundamental security principle of the API.
+-   **Cryptographic Standards**: The class uses the `secp256k1` elliptic curve and `SHA-256` hashing. These standards are fixed and **must not** be changed, as this would break compatibility with the entire Circular network.
+-   **Private Key Handling**: The private key is passed as an argument to the signing and submission methods; it is never stored in the class instance.
+
+## Method-by-Method Guide
+
+### Account Lifecycle
+
+-   **the open method**: Use this method to initialize the account state with a specific address. It returns true on success.
+-   **the update account method**: Use this method to fetch the latest `nonce` from the network for the currently open account.
+-   **the close method**: Use this method to clear all fields and reset the object to its initial state.
+
+### Network Configuration
+
+-   **the set network method**: Use this to point the API to a different network environment (e.g., 'devnet', 'mainnet'). It dynamically fetches the correct `nagUrl` (Network Access Gateway URL).
+-   **the set blockchain method**: Use this to specify the address of the target blockchain.
+
+### Transactions and Certificates
+
+-   **the submit certificate method**: This is the primary method for creating and sending a transaction.
+    -   **What it does**: It takes the application `data` and a `private key`. It then performs a precise sequence of operations:
+        1.  Constructs a JSON payload containing the data.
+        2.  Creates a unique transaction `ID` by hashing a concatenated string of critical fields (blockchain, address, payload, nonce, timestamp).
+        3.  Signs the transaction `ID`.
+        4.  Assembles the final transaction object.
+        5.  Submits the transaction to the network.
+        6.  If successful, it saves the transaction ID and increments the `nonce`.
+    -   **Invariants**: The structure of the string that is hashed to create the transaction `ID` is immutable. Do not change the order or composition of the fields (`blockchain` + `address` + `address` + `payload` + `nonce` + `timestamp`).
+-   **the get transaction outcome method**: Use this method to poll the network for the status of a submitted transaction. It will continue checking until a final status (not "Pending") is received or a timeout occurs.
+-   **the get transaction method**: Use this to fetch the details of a specific transaction using its block and transaction ID.
+
+### Getters and Setters
+
+-   `getLastError`: Retrieves the last error message string.
+-   `getLatestTxID`: Retrieves the ID of the last successfully submitted transaction.
+-   `getNonce`: Retrieves the current local nonce value.
+-   Other getters and setters provide simple access to their corresponding fields.

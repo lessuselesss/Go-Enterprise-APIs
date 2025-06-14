@@ -1,0 +1,208 @@
+---
+description: 
+globs: src/utils.rs
+alwaysApply: false
+---
+---
+description: "Rules for the Utilities module, which provides essential functions for data formatting, timestamp generation, and hexadecimal string manipulation in the CIRCULAR Enterprise APIs. This module is a core component for handling data transformation and time-based operations across the Circular ecosystem."
+globs:
+  - "*src/utils.(js|mjs|cjs|php|py|java|rs|go)"
+alwaysApply: true
+---
+
+# IMPORTANT: RESTRICTED IMPLEMENTATION NOTICE
+
+**ONLY THE DEFINITIONS AND LOGIC STATED IN THIS DOCUMENT ARE TO BE USED IN THE DESIGNATED MODULE. ALL OTHER LOGIC IS PROHIBITED.**
+
+This document serves as the single source of truth for the Utilities implementation. Any deviation from the specified structure, methods, or logic is strictly prohibited. This includes:
+- Adding new fields or methods not explicitly defined
+- Modifying the behavior of existing methods
+- Changing the version information or constants
+- Implementing alternative data formatting approaches
+- Adding additional dependencies beyond those specified
+- Modifying the timestamp format or timezone handling
+- Altering the hexadecimal string manipulation logic
+- Changing the error handling behavior
+
+The implementation must exactly match the structure and behavior described in this document.
+
+# Helper Class Documentation
+
+## Overview
+The Helper class provides utility functions for data formatting, timestamp generation, and hexadecimal string manipulation in the CIRCULAR Enterprise APIs.
+
+## Version Information
+- Library Version: 1.0.13
+- Creation Date: 13/3/2025
+- Last Update: 13/3/2025
+- Originator: Gianluca De Novi, PhD
+- Contributors: Danny De Novi
+
+## Required Dependencies
+```pseudo
+// Time and Date Handling
+REQUIRE time_zone_utilities
+REQUIRE datetime_utilities
+REQUIRE datetime_formatter
+
+// Character Encoding
+REQUIRE utf8_encoding
+REQUIRE character_set_utilities
+
+// String Manipulation
+REQUIRE string_builder
+REQUIRE string_utilities
+```
+
+## Class Structure
+
+```pseudo
+CLASS Helper
+    PUBLIC STATIC METHODS:
+        PAD_NUMBER(num: INTEGER): STRING
+            // Adds leading zeros to numbers less than 10
+            // If input is not a number or is null/undefined, it should be handled by the caller or return as is.
+            IF num < 10
+                RETURN "0" + num
+            ELSE
+                RETURN num.toString()
+
+        GET_FORMATTED_TIMESTAMP(): STRING
+            // Generates UTC timestamp in YYYY:MM:DD-HH:MM:SS format
+            CREATE date AS NEW Date()
+            SET year TO date.getUTCFullYear()
+            SET month TO PAD_NUMBER(date.getUTCMonth() + 1)
+            SET day TO PAD_NUMBER(date.getUTCDate())
+            SET hours TO PAD_NUMBER(date.getUTCHours())
+            SET minutes TO PAD_NUMBER(date.getUTCMinutes())
+            SET seconds TO PAD_NUMBER(date.getUTCSeconds())
+            RETURN CONCATENATE(year, ":", month, ":", day, "-", hours, ":", minutes, ":", seconds)
+
+        HEX_FIX(word: STRING): STRING
+            // Removes '0x' prefix from hexadecimal strings if present
+            IF TYPEOF(word) IS NOT STRING
+                RETURN ""
+            IF word.startsWith("0x")
+                RETURN word.slice(2)
+            RETURN word
+
+        STRING_TO_HEX(str: STRING): STRING
+            // Converts string to hexadecimal representation using UTF-8 encoding
+            IF TYPEOF(str) IS NOT STRING
+                RETURN ""
+            RETURN CONVERT_BUFFER_FROM_UTF8_TO_HEX(str)
+
+        HEX_TO_STRING(hexStr: STRING): STRING
+            // Converts hexadecimal string to regular string using UTF-8 decoding
+            SET cleanedHex TO HEX_FIX(hexStr)
+            IF cleanedHex IS EMPTY OR cleanedHex.length() % 2 != 0
+                RETURN ""
+            RETURN CONVERT_BUFFER_FROM_HEX_TO_UTF8(cleanedHex)
+```
+
+## Usage Guidelines
+
+1. Timestamp Generation:
+   - Use GET_FORMATTED_TIMESTAMP() for UTC timestamps
+   - Format is always "yyyy:MM:dd-HH:mm:ss"
+
+2. Number Formatting:
+   - Use PAD_NUMBER() for single-digit padding
+   - Input must be positive integer
+
+3. Hexadecimal Operations:
+   - Use HEX_FIX() to clean hex strings
+   - Use STRING_TO_HEX() for string conversion
+   - Use HEX_TO_STRING() for hex decoding
+
+## Error Handling
+
+- All functions handle NULL inputs gracefully
+- Invalid hex strings return empty string
+- Invalid string lengths return empty string
+- No exceptions are thrown
+
+## Dependencies
+
+- Java Time API for timestamp generation
+- StandardCharsets for UTF-8 encoding
+- StringBuilder for string manipulation
+
+# Helper Class Rules
+
+## Overview
+The Helper class provides utility functions for data formatting, timestamp generation, and hexadecimal string manipulation in the CIRCULAR Enterprise APIs.
+
+
+## Function Rules
+
+### padNumber
+- **Purpose**: Adds leading zeros to numbers less than 10.
+- **Input**: `num` (INTEGER) - The number to pad.
+- **Output**: STRING - The padded number as a string.
+- **Rules**:
+  - If `num` is less than 10, prepend "0".
+  - Otherwise, return `num` as a string.
+  - If the input is not a number or is `null`/`undefined`, the behavior should align with the `index.js` reference (e.g., JavaScript's type coercion for `num < 10` or `num.toString()`).
+
+### getFormattedTimestamp
+- **Purpose**: Generates a UTC timestamp in "YYYY:MM:DD-HH:MM:SS" format.
+- **Output**: STRING - The formatted UTC timestamp.
+- **Rules**:
+  - Must use `Date` object methods (`getUTCFullYear`, `getUTCMonth`, `getUTCDate`, `getUTCHours`, `getUTCMinutes`, `getUTCSeconds`).
+  - Month must be `getUTCMonth() + 1`.
+  - Day, month, hours, minutes, and seconds must be padded with a leading zero if less than 10 using `PAD_NUMBER`.
+  - Must follow the exact format "YYYY:MM:DD-HH:MM:SS".
+
+### hexFix
+- **Purpose**: Removes the '0x' prefix from hexadecimal strings if present.
+- **Input**: `word` (STRING) - The hexadecimal string.
+- **Output**: STRING - The cleaned hexadecimal string.
+- **Rules**:
+  - If `word` is not a string (e.g., `null`, `undefined`), return an empty string `""`.
+  - If `word` starts with '0x', remove the prefix.
+  - Otherwise, return `word` as is.
+
+### stringToHex
+- **Purpose**: Converts a string to its hexadecimal representation using UTF-8 encoding.
+- **Input**: `str` (STRING) - The input string.
+- **Output**: STRING - The hexadecimal string without '0x' prefix.
+- **Rules**:
+  - If `str` is not a string (e.g., `null`, `undefined`), return an empty string `""`.
+  - Must use UTF-8 encoding for conversion.
+  - The output must be a plain hexadecimal string (no '0x' prefix).
+
+### hexToString
+- **Purpose**: Converts a hexadecimal string to a regular string using UTF-8 decoding.
+- **Input**: `hexStr` (STRING) - The hexadecimal string.
+- **Output**: STRING - The decoded regular string.
+- **Rules**:
+  - First, apply `HEX_FIX` to the input `hexStr`.
+  - If the `cleanedHex` is empty or has an odd length, return an empty string `""`.
+  - Must use UTF-8 decoding for conversion.
+  - Errors during decoding (e.g., invalid hex characters) should result in an empty string or a string with replacement characters, depending on the underlying library's "lossy" conversion behavior, without throwing exceptions.
+
+## Error Handling
+- Functions should handle `null` or `undefined` inputs gracefully by returning an empty string or a default value as specified in each function's rules, mirroring the `index.js` behavior.
+- Invalid string lengths for hex conversions should result in an empty string.
+- Errors during hex decoding (e.g., malformed hex) should be handled without throwing exceptions, typically by returning an empty string or a string with replacement characters if a "lossy" conversion is used.
+
+## Testing Requirements
+- Unit tests must cover all functions
+- Tests must include edge cases (null, empty strings, invalid hex)
+- Tests must verify correct encoding/decoding
+- Tests must verify timestamp format and timezone
+
+## Documentation Requirements
+- All functions must have JavaDoc comments
+- Comments must include:
+  - Function purpose
+  - Input parameters
+  - Return value
+  - Any special cases or limitations
+
+## Code Style
+- Functions must be public and static
+- Function names must be camelCase
+- Constants must be public, static, and final
+- Constants must be in UPPER_SNAKE_CASE

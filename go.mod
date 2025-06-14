@@ -1,4 +1,4 @@
-module example.com/my_circular_project // <-- YOU CAN CHANGE THIS MODULE PATH
+module circular-api
 
 go 1.21 // Or your Go version, e.g., 1.22
 
