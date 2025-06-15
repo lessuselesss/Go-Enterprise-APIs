@@ -3,5 +3,6 @@
 .windsurf
 result
 .envrc
+.env
 target
 flake.*

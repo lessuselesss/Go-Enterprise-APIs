@@ -1,4 +1,4 @@
-@module circular-api
+module circular-api
 
 go 1.21 // Or your Go version, e.g., 1.22
 

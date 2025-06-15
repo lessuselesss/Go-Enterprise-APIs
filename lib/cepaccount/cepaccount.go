@@ -15,18 +15,18 @@ import (
 
 // CEPAccount manages a user's account on the Circular network.
 type CEPAccount struct {
-	address       string
-	publicKey     string
-	info          interface{}
-	codeVersion   string
-	lastError     string
-	nagUrl        string
-	networkNode   string
-	blockchain    string
-	latestTxID    string
-	nonce         int
-	data          map[string]interface{}
-	intervalSec   int
+	address     string
+	publicKey   string
+	info        interface{}
+	codeVersion string
+	lastError   string
+	nagUrl      string
+	networkNode string
+	blockchain  string
+	latestTxID  string
+	nonce       int
+	data        map[string]interface{}
+	intervalSec int
 }
 
 // NewCEPAccount creates and initializes a new CEPAccount object.
@@ -187,6 +187,16 @@ func (a *CEPAccount) GetLatestTxID() string {
 	return a.latestTxID
 }
 
+// GetBlockchain returns the target blockchain address.
+func (a *CEPAccount) GetBlockchain() string {
+	return a.blockchain
+}
+
+// GetNagURL returns the Network Access Gateway URL.
+func (a *CEPAccount) GetNagURL() string {
+	return a.nagUrl
+}
+
 // GetNonce returns the current nonce for the account.
 func (a *CEPAccount) GetNonce() int {
 	return a.nonce
@@ -285,6 +295,57 @@ func (a *CEPAccount) SubmitCertificate(data string, privateKey string) (map[stri
 	return result, nil
 }
 
+// GetTransaction fetches transaction details by block and transaction ID.
+func (a *CEPAccount) GetTransaction(block string, txID string) (map[string]interface{}, error) {
+	payload := map[string]interface{}{
+		"Blockchain": utils.HexFix(a.blockchain),
+		"ID":         utils.HexFix(txID),
+		"Start":      block,
+		"End":        block,
+		"Version":    a.codeVersion,
+	}
+
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		a.lastError = fmt.Sprintf("Failed to fetch transaction: could not create payload: %v", err)
+		return nil, err
+	}
+
+	endpoint := a.nagUrl + "/Circular_GetTransactionbyID_" + a.networkNode
+	resp, err := http.Post(endpoint, "application/json", bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		a.lastError = fmt.Sprintf("Failed to fetch transaction: network error: %v", err)
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		a.lastError = fmt.Sprintf("Failed to fetch transaction: could not read response body: %v", err)
+		return nil, err
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(body, &result); err != nil {
+		a.lastError = fmt.Sprintf("Failed to fetch transaction: could not parse JSON response: %v", err)
+		return nil, err
+	}
+
+	// Check for specific error messages from the API that indicate "not found" or "invalid"
+	if res, ok := result["Result"].(float64); ok {
+		if res == 404 {
+			a.lastError = "Transaction Not Found"
+			return result, nil // Return result with 404 status
+		}
+		if res == 400 {
+			a.lastError = "Invalid block number"
+			return result, nil // Return result with 400 status
+		}
+	}
+
+	return result, nil
+}
+
 // GetTransactionOutcome retrieves the outcome of a specific transaction.
 func (a *CEPAccount) GetTransactionOutcome(txID string) (map[string]interface{}, error) {
 	// 1. Create the payload
@@ -333,7 +394,7 @@ func (a *CEPAccount) WaitForTransactionOutcome(txID string, timeoutSec int) (map
 		if err == nil {
 			if response, ok := outcome["Response"].(map[string]interface{}); ok {
 				if status, ok := response["Status"].(string); ok {
-					if status == "Confirmed" || status == "Failed" {
+					if status == "Confirmed" || status == "Failed" || status == "Success" {
 						return outcome, nil
 					}
 				}
