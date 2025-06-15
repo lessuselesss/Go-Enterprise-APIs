@@ -72,27 +72,27 @@ func (a *CEPAccount) SetNetwork(network string) bool {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		a.lastError = fmt.Sprintf("HTTP error! status: %d", resp.StatusCode)
+		a.lastError = fmt.Sprintf("Failed to set network: HTTP error! status: %d", resp.StatusCode)
 		return false
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		a.lastError = fmt.Sprintf("Failed to read response body: %v", err)
+		a.lastError = fmt.Sprintf("Failed to set network: could not read response body: %v", err)
 		return false
 	}
 
 	var result map[string]interface{}
 	if err := json.Unmarshal(body, &result); err != nil {
-		a.lastError = fmt.Sprintf("Failed to parse JSON response: %v", err)
+		a.lastError = fmt.Sprintf("Failed to set network: could not parse JSON response: %v", err)
 		return false
 	}
 
 	if status, ok := result["status"].(string); !ok || status != "success" {
 		if msg, ok := result["message"].(string); ok {
-			a.lastError = fmt.Sprintf("Failed to get URL: %s", msg)
+			a.lastError = fmt.Sprintf("Failed to set network: API error: %s", msg)
 		} else {
-			a.lastError = "Failed to get URL"
+			a.lastError = "Failed to set network: API returned an error"
 		}
 		return false
 	}
@@ -102,7 +102,7 @@ func (a *CEPAccount) SetNetwork(network string) bool {
 		return true
 	}
 
-	a.lastError = "URL not found in response"
+	a.lastError = "Failed to set network: URL not found in response"
 	return false
 }
 
@@ -121,32 +121,32 @@ func (a *CEPAccount) UpdateAccount() bool {
 
 	jsonPayload, err := json.Marshal(payload)
 	if err != nil {
-		a.lastError = fmt.Sprintf("Failed to create payload: %v", err)
+		a.lastError = fmt.Sprintf("Failed to update account: could not create payload: %v", err)
 		return false
 	}
 
-	endpoint := a.nagUrl + "Circular_GetWalletNonce_" + a.networkNode
+	endpoint := a.nagUrl + "/Circular_GetWalletNonce_" + a.networkNode
 	resp, err := http.Post(endpoint, "application/json", bytes.NewBuffer(jsonPayload))
 	if err != nil {
-		a.lastError = fmt.Sprintf("Failed to update account: %v", err)
+		a.lastError = fmt.Sprintf("Failed to update account: network error: %v", err)
 		return false
 	}
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		a.lastError = fmt.Sprintf("Failed to read response body: %v", err)
+		a.lastError = fmt.Sprintf("Failed to update account: could not read response body: %v", err)
 		return false
 	}
 
 	var result map[string]interface{}
 	if err := json.Unmarshal(body, &result); err != nil {
-		a.lastError = fmt.Sprintf("Failed to parse JSON response: %v", err)
+		a.lastError = fmt.Sprintf("Failed to update account: could not parse JSON response: %v", err)
 		return false
 	}
 
 	if res, ok := result["Result"].(float64); !ok || res != 200 {
-		a.lastError = "Invalid response format or error result"
+		a.lastError = "Failed to update account: Invalid response format or error result"
 		return false
 	}
 
@@ -157,7 +157,7 @@ func (a *CEPAccount) UpdateAccount() bool {
 		}
 	}
 
-	a.lastError = "Invalid response format or missing Nonce field"
+	a.lastError = "Failed to update account: Invalid response format or missing Nonce field"
 	return false
 }
 
@@ -250,7 +250,7 @@ func (a *CEPAccount) SubmitCertificate(data string, privateKey string) (map[stri
 	}
 
 	// 6. Submit the transaction
-	endpoint := a.nagUrl + "Circular_SubmitCertificate_" + a.networkNode
+	endpoint := a.nagUrl + "/Circular_SubmitCertificate_" + a.networkNode
 	resp, err := http.Post(endpoint, "application/json", bytes.NewBuffer(jsonSubmission))
 	if err != nil {
 		a.lastError = fmt.Sprintf("Failed to submit certificate: %v", err)
@@ -301,7 +301,7 @@ func (a *CEPAccount) GetTransactionOutcome(txID string) (map[string]interface{},
 	}
 
 	// 2. Make the request
-	endpoint := a.nagUrl + "Circular_GetTransactionOutcome_" + a.networkNode
+	endpoint := a.nagUrl + "/Circular_GetTransactionOutcome_" + a.networkNode
 	resp, err := http.Post(endpoint, "application/json", bytes.NewBuffer(jsonPayload))
 	if err != nil {
 		a.lastError = fmt.Sprintf("Failed to get transaction outcome: %v", err)
@@ -347,4 +347,19 @@ func (a *CEPAccount) WaitForTransactionOutcome(txID string, timeoutSec int) (map
 
 		time.Sleep(time.Duration(a.intervalSec) * time.Second)
 	}
+}
+
+// SetNagURL is a test helper to set the nagUrl field.
+func (a *CEPAccount) SetNagURL(url string) {
+	a.nagUrl = url
+}
+
+// SetNonceForTest is a test helper to set the nonce field.
+func (a *CEPAccount) SetNonceForTest(nonce int) {
+	a.nonce = nonce
+}
+
+// SetIntervalSec is a test helper to set the intervalSec field.
+func (a *CEPAccount) SetIntervalSec(sec int) {
+	a.intervalSec = sec
 }
