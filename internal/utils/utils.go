@@ -8,9 +8,6 @@ import (
 )
 
 const LIB_VERSION = "1.0.13"
-const DEFAULT_NAG = "https://nag.circular.io/"
-var NETWORK_URL = "https://network.circular.io/"
-const DEFAULT_CHAIN = "Circular"
 
 // PadNumber adds a leading zero to numbers less than 10.
 func PadNumber(num int) string {
@@ -54,3 +51,4 @@ func HexToString(hexStr string) string {
 	}
 	return string(bytes)
 }
+

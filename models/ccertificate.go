@@ -1,8 +1,8 @@
-package ccertificate
+package models
 
 import (
+	"circular-api/internal/utils"
 	"encoding/json"
-	"circular-api/lib/utils"
 )
 
 // CCertificate is a data structure used to build and format certificate payloads.

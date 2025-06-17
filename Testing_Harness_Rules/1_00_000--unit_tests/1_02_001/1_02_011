@@ -1,0 +1,297 @@
+
+      - [1.2.21] get transaction(BlockID, TxID) should throw on network error
+        ```pseudocode
+        // 1. Setup
+        account = NEW CEP_Account()
+        account.open(mockAddress)
+        account.setNetwork("testnet")
+        blockNum = 100
+        txID = "testTxID123"
+        
+        // 2. Simulate network errors
+        NETWORK_ERRORS = [
+            { type: "timeout", message: "Request timeout" },
+            { type: "connection", message: "Connection refused" },
+            { type: "dns", message: "DNS lookup failed" }
+        ]
+        
+        // 3. Test each network error
+        FOR each error IN NETWORK_ERRORS
+            MOCK_NETWORK_ERROR = error
+            
+            // Attempt to get transaction
+            try {
+                await account.getTransaction(blockNum, txID)
+                VERIFY false  // Should not reach here
+            } catch (error) {
+                // Verify error
+                VERIFY error.message INCLUDES error.message
+                VERIFY error.type IS "NetworkError"
+            }
+        
+        // 4. Verify account state remains unchanged
+        VERIFY account.Nonce EQUALS initialNonce
+        VERIFY account.LatestTxID IS ""
+        ```
+
+      - [1.2.22] get transaction by ID should fetch a transaction within a block range
+        ```pseudocode
+        // 1. Setup
+        account = NEW CEP_Account()
+        account.open(mockAddress)
+        account.setNetwork("testnet")
+        
+        // 2. Submit multiple test transactions
+        testData = ["tx1", "tx2", "tx3"]
+        submitResults = []
+        
+        FOR each data IN testData
+            result = await account.submitCertificate(data, mockPrivateKey)
+            submitResults.push(result)
+        
+        // 3. Get transactions within block range
+        startBlock = submitResults[0].blockNumber
+        endBlock = submitResults[2].blockNumber
+        
+        FOR each result IN submitResults
+            txResult = await account.getTransactionByID(
+                result.TxID,
+                startBlock,
+                endBlock
+            )
+            
+            // Verify transaction data
+            VERIFY txResult.Result EQUALS 200
+            VERIFY txResult.Response.id EQUALS result.TxID
+            VERIFY txResult.Response.status IS_NOT "Pending"
+            VERIFY txResult.Response.blockNumber GREATER THAN OR EQUAL TO startBlock
+            VERIFY txResult.Response.blockNumber LESS THAN OR EQUAL TO endBlock
+            VERIFY txResult.Response.data EQUALS testData[submitResults.indexOf(result)]
+        
+        // 4. Test block range edge cases
+        // Test with exact block numbers
+        txResult = await account.getTransactionByID(
+            submitResults[0].TxID,
+            submitResults[0].blockNumber,
+            submitResults[0].blockNumber
+        )
+        VERIFY txResult.Result EQUALS 200
+        VERIFY txResult.Response.status IS_NOT "Pending"
+        
+        // Test with invalid block range
+        try {
+            await account.getTransactionByID(
+                submitResults[0].TxID,
+                endBlock,
+                startBlock  // Reversed range
+            )
+            VERIFY false  // Should not reach here
+        } catch (error) {
+            VERIFY error.message INCLUDES "Invalid block range"
+        }
+        ```
+
+      - [1.2.23] get transaction by ID should handle "Transaction Not Found"
+        ```pseudocode
+        // 1. Setup
+        account = NEW CEP_Account()
+        account.open(mockAddress)
+        account.setNetwork("testnet")
+        
+        // 2. Test various "not found" scenarios
+        NOT_FOUND_SCENARIOS = [
+            { txID: "0x" + "0".repeat(64), blockRange: [1, 100] },  // Non-existent TxID
+            { txID: "0x123", blockRange: [1, 100] },                // Invalid TxID format
+            { txID: "0x" + "f".repeat(64), blockRange: [999999, 1000000] }  // Far future block
+        ]
+        
+        // 3. Test each scenario
+        FOR each scenario IN NOT_FOUND_SCENARIOS
+            txResult = await account.getTransactionByID(
+                scenario.txID,
+                scenario.blockRange[0],
+                scenario.blockRange[1]
+            )
+            
+            // Verify not found response
+            VERIFY txResult.Result EQUALS 404
+            VERIFY txResult.Message INCLUDES "Transaction Not Found"
+            VERIFY txResult.Response IS NULL
+        
+        // 4. Test with valid TxID but wrong block range
+        // First submit a transaction
+        submitResult = await account.submitCertificate("test data", mockPrivateKey)
+        
+        // Try to find it in wrong block range
+        txResult = await account.getTransactionByID(
+            submitResult.TxID,
+            submitResult.blockNumber + 1000,  // Far future block
+            submitResult.blockNumber + 2000
+        )
+        
+        VERIFY txResult.Result EQUALS 404
+        VERIFY txResult.Message INCLUDES "Transaction Not Found"
+        ```
+
+      - [1.2.24] get transaction by ID should throw on network error
+        ```pseudocode
+        // 1. Setup
+        account = NEW CEP_Account()
+        account.open(mockAddress)
+        account.setNetwork("testnet")
+        txID = "testTxID123"
+        
+        // 2. Simulate various network error scenarios
+        NETWORK_ERRORS = [
+            { type: "timeout", message: "Request timeout", retryCount: 3 },
+            { type: "connection", message: "Connection refused", retryCount: 2 },
+            { type: "dns", message: "DNS lookup failed", retryCount: 1 }
+        ]
+        
+        // 3. Test each network error with retries
+        FOR each error IN NETWORK_ERRORS
+            MOCK_NETWORK_ERROR = error
+            retryAttempts = 0
+            
+            // Attempt to get transaction with retries
+            try {
+                await account.getTransactionByID(txID, 1, 100)
+                VERIFY false  // Should not reach here
+            } catch (error) {
+                // Verify error and retry behavior
+                VERIFY error.message INCLUDES error.message
+                VERIFY error.type IS "NetworkError"
+                VERIFY retryAttempts EQUALS error.retryCount
+            }
+        
+        // 4. Test partial network failure
+        // Simulate network failure after successful connection
+        MOCK_PARTIAL_NETWORK_FAILURE = TRUE
+        
+        try {
+            await account.getTransactionByID(txID, 1, 100)
+            VERIFY false  // Should not reach here
+        } catch (error) {
+            VERIFY error.message INCLUDES "Connection lost"
+            VERIFY error.type IS "NetworkError"
+        }
+        
+        // 5. Verify account state remains unchanged after errors
+        VERIFY account.Nonce EQUALS initialNonce
+        VERIFY account.LatestTxID IS ""
+        ```
+
+   
+      - [1.2.26] should handle certificate submission with 1KB data
+        ```pseudocode
+        // 1. Setup
+        account = NEW CEP_Account()
+        account.open("0x123...")
+        account.setNetwork("testnet")
+        
+        // 2. Generate 1KB test data
+        cert_1kb = generateCertificateWithSize(1024)
+        
+        // 3. Submit certificate
+        result = await account.submitCertificate(cert_1kb, mockPrivateKey)
+        
+        // 4. Verify submission
+        VERIFY result.Result EQUALS 200
+        VERIFY result.TxID IS NOT NULL
+        VERIFY result.Message EQUALS "Transaction Added"
+        
+        // 5. Verify data integrity
+        txOutcome = await account.getTransactionOutcome(result.TxID, 5)
+        VERIFY txOutcome.data EQUALS cert_1kb
+        ```
+      - [1.2.27] should handle certificate submission with 2KB data
+        ```pseudocode
+        // 1. Setup
+        account = NEW CEP_Account()
+        account.open("0x123...")
+        account.setNetwork("testnet")
+        
+        // 2. Generate 2KB test data
+        cert_2kb = generateCertificateWithSize(2048)
+        
+        // 3. Submit certificate
+        result = await account.submitCertificate(cert_2kb, mockPrivateKey)
+        
+        // 4. Verify submission
+        VERIFY result.Result EQUALS 200
+        VERIFY result.TxID IS NOT NULL
+        VERIFY result.Message EQUALS "Transaction Added"
+        
+        // 5. Verify data integrity
+        txOutcome = await account.getTransactionOutcome(result.TxID, 5)
+        VERIFY txOutcome.data EQUALS cert_2kb
+        ```
+      - [1.2.28] should handle certificate submission with 5KB data
+        ```pseudocode
+        // 1. Setup
+        account = NEW CEP_Account()
+        account.open("0x123...")
+        account.setNetwork("testnet")
+        
+        // 2. Generate 5KB test data
+        cert_5kb = generateCertificateWithSize(5120)
+        
+        // 3. Submit certificate
+        result = await account.submitCertificate(cert_5kb, mockPrivateKey)
+        
+        // 4. Verify submission
+        VERIFY result.Result EQUALS 200
+        VERIFY result.TxID IS NOT NULL
+        VERIFY result.Message EQUALS "Transaction Added"
+        
+        // 5. Verify data integrity
+        txOutcome = await account.getTransactionOutcome(result.TxID, 5)
+        VERIFY txOutcome.data EQUALS cert_5kb
+        ```
+      - [1.2.29] should handle concurrent certificate submissions
+        ```pseudocode
+        // 1. Setup
+        account = NEW CEP_Account()
+        account.open("0x123...")
+        account.setNetwork("testnet")
+        initialNonce = account.Nonce
+        
+        // 2. Prepare multiple certificates
+        certs = [
+            "cert1",
+            "cert2",
+            "cert3"
+        ]
+        
+        // 3. Submit concurrently
+        results = await Promise.all(
+            certs.map(cert => account.submitCertificate(cert, mockPrivateKey))
+        )
+        
+        // 4. Verify all submissions
+        FOR each result IN results
+            VERIFY result.Result EQUALS 200
+            VERIFY result.TxID IS NOT NULL
+        
+        // 5. Verify nonce sequence
+        VERIFY account.Nonce EQUALS initialNonce + certs.length
+        ```
+      - [1.2.30] should handle network errors during submission
+        ```pseudocode
+        // 1. Setup
+        account = NEW CEP_Account()
+        account.open("0x123...")
+        account.setNetwork("testnet")
+        initialNonce = account.Nonce
+        
+        // 2. Simulate network error
+        MOCK_NETWORK_ERROR = TRUE
+        
+        // 3. Attempt submission
+        result = await account.submitCertificate("test data", mockPrivateKey)
+        
+        // 4. Verify error handling
+        VERIFY result.Result EQUALS 500
+        VERIFY result.Message INCLUDES "Network error"
+        VERIFY account.Nonce EQUALS initialNonce
+        ```

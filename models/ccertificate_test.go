@@ -1,4 +1,4 @@
-package ccertificate
+package models
 
 import (
 	"encoding/json"
@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"circular-api/lib/utils"
+	"circular-api/internal/utils"
 )
 
 // [1.1.01] should have all required env variables for testnet

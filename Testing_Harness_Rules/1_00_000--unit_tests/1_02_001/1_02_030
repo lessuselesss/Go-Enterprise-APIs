@@ -1,0 +1,256 @@
+       ```
+      - [1.2.31] should maintain transaction order with multiple submissions
+        ```pseudocode
+        // 1. Setup
+        account = NEW CEP_Account()
+        account.open("0x123...")
+        account.setNetwork("testnet")
+        initialNonce = account.Nonce
+        
+        // 2. Submit sequence of certificates
+        certs = [
+            "cert1",
+            "cert2",
+            "cert3"
+        ]
+        results = []
+        
+        FOR each cert IN certs
+            result = await account.submitCertificate(cert, mockPrivateKey)
+            results.push(result)
+        
+        // 3. Verify transaction order
+        FOR i = 0 TO results.length - 1
+            txOutcome = await account.getTransactionOutcome(results[i].TxID, 5)
+            VERIFY txOutcome.data EQUALS certs[i]
+            VERIFY txOutcome.nonce EQUALS initialNonce + i + 1
+        ```
+
+  - **network resilience tests**
+    - [1.2.32] should handle network timeouts and retries
+      ```pseudocode
+      // 1. Setup
+      account = NEW CEP_Account()
+      account.open(mockAddress)
+      account.setNetwork("testnet")
+      initialNonce = account.Nonce
+
+      // 2. Test various timeout scenarios
+      TIMEOUT_SCENARIOS = [
+          { timeout: 1000, retries: 3 },  // Short timeout, multiple retries
+          { timeout: 5000, retries: 2 },  // Medium timeout, fewer retries
+          { timeout: 10000, retries: 1 }  // Long timeout, single retry
+      ]
+
+      // 3. Test each timeout scenario
+      FOR each scenario IN TIMEOUT_SCENARIOS
+          MOCK_TIMEOUT = scenario.timeout
+          MOCK_RETRIES = scenario.retries
+          retryAttempts = 0
+
+          // Attempt operation
+          try {
+              await account.updateAccount()
+              VERIFY false  // Should not reach here
+          } catch (error) {
+              // Verify retry behavior
+              VERIFY retryAttempts EQUALS scenario.retries
+              VERIFY error.message INCLUDES "Timeout"
+              VERIFY error.type IS "NetworkError"
+          }
+
+      // 4. Test exponential backoff
+      MOCK_TIMEOUT = 1000
+      MOCK_RETRIES = 3
+      retryDelays = []
+
+      try {
+          await account.updateAccount()
+          VERIFY false  // Should not reach here
+      } catch (error) {
+          // Verify backoff timing
+          FOR i = 1 TO retryDelays.length - 1
+              VERIFY retryDelays[i] GREATER THAN retryDelays[i-1]
+      }
+      ```
+
+    - [1.2.33] should handle temporary network disconnections
+      ```pseudocode
+      // 1. Setup
+      account = NEW CEP_Account()
+      account.open(mockAddress)
+      account.setNetwork("testnet")
+      initialNonce = account.Nonce
+
+      // 2. Test various disconnection scenarios
+      DISCONNECTION_SCENARIOS = [
+          { duration: 1000, shouldRecover: true },   // Short disconnection
+          { duration: 5000, shouldRecover: true },   // Medium disconnection
+          { duration: 10000, shouldRecover: false }  // Long disconnection
+      ]
+
+      // 3. Test each disconnection scenario
+      FOR each scenario IN DISCONNECTION_SCENARIOS
+          MOCK_DISCONNECTION = scenario.duration
+          
+          // Attempt operation
+          try {
+              await account.updateAccount()
+              VERIFY scenario.shouldRecover  // Should only succeed if shouldRecover is true
+          } catch (error) {
+              VERIFY NOT scenario.shouldRecover  // Should only fail if shouldRecover is false
+              VERIFY error.message INCLUDES "Connection lost"
+              VERIFY error.type IS "NetworkError"
+          }
+
+      // 4. Test reconnection behavior
+      MOCK_DISCONNECTION = 2000
+      MOCK_RECONNECTION_DELAY = 1000
+
+      // First attempt should fail
+      try {
+          await account.updateAccount()
+          VERIFY false  // Should not reach here
+      } catch (error) {
+          VERIFY error.message INCLUDES "Connection lost"
+      }
+
+      // Wait for recovery
+      await WAIT(MOCK_RECONNECTION_DELAY)
+
+      // Second attempt should succeed
+      result = await account.updateAccount()
+      VERIFY result IS TRUE
+      ```
+
+    - [1.2.34] should handle rate limiting and backoff
+      ```pseudocode
+      // 1. Setup
+      account = NEW CEP_Account()
+      account.open(mockAddress)
+      account.setNetwork("testnet")
+      initialNonce = account.Nonce
+
+      // 2. Test rate limiting scenarios
+      RATE_LIMIT_SCENARIOS = [
+          { limit: 10, window: 1000 },  // 10 requests per second
+          { limit: 100, window: 60000 } // 100 requests per minute
+      ]
+
+      // 3. Test each rate limit scenario
+      FOR each scenario IN RATE_LIMIT_SCENARIOS
+          MOCK_RATE_LIMIT = scenario
+          requestCount = 0
+          startTime = Date.now()
+
+          // Make multiple requests
+          FOR i = 1 TO scenario.limit + 5  // Exceed the limit
+              try {
+                  await account.updateAccount()
+                  requestCount++
+              } catch (error) {
+                  // Verify rate limit error
+                  VERIFY error.message INCLUDES "Rate limit exceeded"
+                  VERIFY error.type IS "RateLimitError"
+                  break
+              }
+
+          // Verify rate limit behavior
+          elapsedTime = Date.now() - startTime
+          VERIFY requestCount LESS THAN OR EQUAL TO scenario.limit
+          VERIFY elapsedTime LESS THAN scenario.window
+
+      // 4. Test backoff behavior
+      MOCK_RATE_LIMIT = { limit: 5, window: 1000 }
+      backoffDelays = []
+
+      // Exceed rate limit
+      FOR i = 1 TO 10
+          try {
+              await account.updateAccount()
+          } catch (error) {
+              backoffDelays.push(error.retryAfter)
+          }
+
+      // Verify increasing backoff
+      FOR i = 1 TO backoffDelays.length - 1
+          VERIFY backoffDelays[i] GREATER THAN backoffDelays[i-1]
+      ```
+
+    - [1.2.35] should maintain state during network issues
+      ```pseudocode
+      // 1. Setup
+      account = NEW CEP_Account()
+      account.open(mockAddress)
+      account.setNetwork("testnet")
+      initialNonce = account.Nonce
+      initialState = {
+          address: account.address,
+          publicKey: account.publicKey,
+          info: account.info,
+          blockchain: account.blockchain
+      }
+
+      // 2. Test state preservation during various network issues
+      NETWORK_ISSUES = [
+          { type: "timeout", duration: 5000 },
+          { type: "disconnection", duration: 3000 },
+          { type: "rate_limit", duration: 2000 },
+          { type: "partial_failure", duration: 1000 }
+      ]
+
+      // 3. Test each network issue
+      FOR each issue IN NETWORK_ISSUES
+          MOCK_NETWORK_ISSUE = issue
+          
+          // Attempt operation
+          try {
+              await account.updateAccount()
+          } catch (error) {
+              // Verify state preservation
+              VERIFY account.address EQUALS initialState.address
+              VERIFY account.publicKey EQUALS initialState.publicKey
+              VERIFY account.info EQUALS initialState.info
+              VERIFY account.blockchain EQUALS initialState.blockchain
+          }
+
+      // 4. Test state recovery after network issues
+      MOCK_NETWORK_ISSUE = { type: "disconnection", duration: 2000 }
+      
+      // First attempt should fail
+      try {
+          await account.updateAccount()
+          VERIFY false  // Should not reach here
+      } catch (error) {
+          // Verify state preserved
+          VERIFY account.address EQUALS initialState.address
+      }
+
+      // Wait for recovery
+      await WAIT(2000)
+
+      // Second attempt should succeed
+      result = await account.updateAccount()
+      VERIFY result IS TRUE
+      VERIFY account.Nonce GREATER THAN initialNonce
+      ``` 
+
+    - **network resilience**
+    - [1.2.35] should preserve state during network issues
+    ```pseudocode
+    // 1. Setup
+    account = NEW CEP_Account()
+    account.open("0x123...")
+    account.setNetwork("testnet")
+    initial_nonce = account.nonce
+    
+    // 2. Mock network error
+    MOCK_NETWORK_ERROR = { type: "timeout", message: "Request timeout" }
+    
+    // 3. Attempt to update account
+    result = await account.update_account()
+    
+    // 4. Verify state preservation
+    VERIFY result IS FALSE
+    VERIFY account.nonce EQUALS initial_nonce
+    ```

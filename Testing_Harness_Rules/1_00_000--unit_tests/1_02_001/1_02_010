@@ -1,0 +1,413 @@
+
+      - [1.2.11] should throw an error if API response indicates failure
+        ```pseudocode
+        // 1. Setup
+        account = NEW CEP_Account()
+        account.open(mockAddress)
+        initialNAG = account.NAG_URL
+        
+        // 2. Test various API error responses
+        API_ERRORS = [
+            { Result: 400, Message: "Bad Request" },
+            { Result: 401, Message: "Unauthorized" },
+            { Result: 403, Message: "Forbidden" },
+            { Result: 404, Message: "Network Not Found" },
+            { Result: 429, Message: "Too Many Requests" },
+            { Result: 500, Message: "Internal Server Error" },
+            { Result: 503, Message: "Service Unavailable" }
+        ]
+        
+        // 3. Test each error case
+        FOR each error IN API_ERRORS
+            MOCK_API_RESPONSE = error
+            
+            // Attempt network change
+            try {
+                await account.setNetwork('mainnet')
+                VERIFY false  // Should not reach here
+            } catch (error) {
+                // Verify error
+                VERIFY error.message INCLUDES error.Message
+                VERIFY error.type IS "APIError"
+                VERIFY account.NAG_URL IS initialNAG  // Should not change
+            }
+        
+        // 4. Test malformed API responses
+        MALFORMED_RESPONSES = [
+            { Result: 200 },  // Missing Response
+            { Result: 200, Response: null },  // Null Response
+            { Result: 200, Response: {} },  // Empty Response
+            { Result: 200, Response: { Status: "Error" } }  // Error Status
+        ]
+        
+        FOR each response IN MALFORMED_RESPONSES
+            MOCK_API_RESPONSE = response
+            
+            try {
+                await account.setNetwork('mainnet')
+                VERIFY false  // Should not reach here
+            } catch (error) {
+                VERIFY error.message INCLUDES "Invalid response"
+                VERIFY error.type IS "APIError"
+                VERIFY account.NAG_URL IS initialNAG  // Should not change
+            }
+        
+        // 5. Verify account state remains unchanged
+        VERIFY account.address IS mockAddress
+        VERIFY account.publicKey IS_NOT_EMPTY
+        VERIFY account.info IS_NOT_EMPTY
+        VERIFY account.blockchain IS DEFAULT_CHAIN
+        ```
+
+    - **update account method**
+      - [1.2.12] should update Nonce on successful API call
+        ```pseudocode
+        // 1. Setup
+        account = NEW CEP_Account()
+        account.open(mockAddress)
+        account.setNetwork("testnet")
+        initialNonce = account.Nonce
+
+        // 2. Mock successful API response
+        MOCK_API_RESPONSE = { 
+            Result: 200, 
+            Response: { 
+                Nonce: 5,
+                Address: account.address,
+                PublicKey: account.publicKey,
+                LatestTxID: "0x123...",
+                Status: "Active"
+            } 
+        }
+
+        // 3. Update account
+        result = await account.updateAccount()
+
+        // 4. Verify successful update
+        VERIFY result IS TRUE
+        VERIFY account.Nonce EQUALS 6  // Should increment by 1
+        VERIFY account.LatestTxID EQUALS MOCK_API_RESPONSE.Response.LatestTxID
+        VERIFY account.info.Status EQUALS "Active"
+
+        // 5. Verify account state
+        VERIFY account.address EQUALS MOCK_API_RESPONSE.Response.Address
+        VERIFY account.publicKey EQUALS MOCK_API_RESPONSE.Response.PublicKey
+        ```
+
+
+    - **submit certificate method**
+      - [1.2.25] should successfully submit a certificate
+        ```pseudocode
+        // 1. Setup
+        account = NEW CEP_Account()
+        account.open("0x123...")
+        account.setNetwork("testnet")
+        
+        // 2. Mock successful API response
+        MOCK_API_RESPONSE = { 
+            Result: 200, 
+            Response: { 
+                txId: "0xabcdef1234567890"
+            } 
+        }
+        
+        // 3. Submit certificate
+        result = await account.submit_certificate("test data", "0x11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff")
+        
+        // 4. Verify successful submission
+        VERIFY result IS TRUE
+        VERIFY account.nonce EQUALS 1
+        VERIFY account.latest_tx_id EQUALS "0xabcdef1234567890"
+        ```
+
+
+      - [1.2.13] should return false and not update Nonce on API error (Result != 200)
+        ```pseudocode
+        // 1. Setup
+        account = NEW CEP_Account()
+        account.open(mockAddress)
+        account.setNetwork("testnet")
+        initialNonce = account.Nonce
+
+        // 2. Test various API error responses
+        API_ERRORS = [
+            { Result: 400, Message: "Bad Request" },
+            { Result: 401, Message: "Unauthorized" },
+            { Result: 403, Message: "Forbidden" },
+            { Result: 404, Message: "Account Not Found" },
+            { Result: 429, Message: "Too Many Requests" },
+            { Result: 500, Message: "Internal Server Error" },
+            { Result: 503, Message: "Service Unavailable" }
+        ]
+
+        // 3. Test each error case
+        FOR each error IN API_ERRORS
+            MOCK_API_RESPONSE = error
+            
+            // Attempt update
+            result = await account.updateAccount()
+            
+            // Verify error handling
+            VERIFY result IS FALSE
+            VERIFY account.Nonce EQUALS initialNonce  // Nonce should not change
+            VERIFY account.lastError INCLUDES error.Message
+            VERIFY account.lastError INCLUDES error.Result.toString()
+
+        // 4. Verify account state remains unchanged
+        VERIFY account.address EQUALS mockAddress
+        VERIFY account.publicKey IS_NOT_EMPTY
+        VERIFY account.info IS_NOT_EMPTY
+        ```
+
+      - [1.2.14] should return false on network error
+        ```pseudocode
+        // 1. Setup
+        account = NEW CEP_Account()
+        account.open(mockAddress)
+        account.setNetwork("testnet")
+        initialNonce = account.Nonce
+
+        // 2. Test various network error scenarios
+        NETWORK_ERRORS = [
+            { type: "timeout", message: "Request timeout" },
+            { type: "connection", message: "Connection refused" },
+            { type: "dns", message: "DNS lookup failed" },
+            { type: "reset", message: "Connection reset" }
+        ]
+
+        // 3. Test each network error
+        FOR each error IN NETWORK_ERRORS
+            MOCK_NETWORK_ERROR = error
+            
+            // Attempt update
+            result = await account.updateAccount()
+            
+            // Verify error handling
+            VERIFY result IS FALSE
+            VERIFY account.Nonce EQUALS initialNonce  // Nonce should not change
+            VERIFY account.lastError INCLUDES error.message
+            VERIFY account.lastError INCLUDES "Network error"
+
+        // 4. Test partial network failure
+        MOCK_PARTIAL_NETWORK_FAILURE = TRUE
+        result = await account.updateAccount()
+        VERIFY result IS FALSE
+        VERIFY account.Nonce EQUALS initialNonce
+        VERIFY account.lastError INCLUDES "Connection lost"
+        ```
+
+      - [1.2.15] should throw an error if account is not open
+        ```pseudocode
+        // 1. Setup
+        account = NEW CEP_Account()
+
+        // 2. Attempt update without opening account
+        EXPECT_ERROR WHEN account.updateAccount() WITH {
+            message: "Account not open",
+            type: "AccountError"
+        }
+
+        // 3. Verify account remains in default state
+        VERIFY account.address IS EMPTY
+        VERIFY account.publicKey IS EMPTY
+        VERIFY account.info IS EMPTY
+        VERIFY account.Nonce IS 0
+        VERIFY account.LatestTxID IS ""
+        VERIFY account.lastError IS ""
+        ```
+
+      - [1.2.16] should return false if response is malformed (missing Nonce)
+        ```pseudocode
+        // 1. Setup
+        account = NEW CEP_Account()
+        account.open(mockAddress)
+        account.setNetwork("testnet")
+        initialNonce = account.Nonce
+
+        // 2. Test various malformed responses
+        MALFORMED_RESPONSES = [
+            { Result: 200, Response: {} },  // Empty response
+            { Result: 200, Response: { Address: "0x123..." } },  // Missing Nonce
+            { Result: 200, Response: { Nonce: "invalid" } },  // Invalid Nonce type
+            { Result: 200, Response: { Nonce: -1 } },  // Negative Nonce
+            { Result: 200, Response: { Nonce: null } },  // Null Nonce
+            { Result: 200, Response: { Nonce: undefined } },  // Undefined Nonce
+            { Result: 200 },  // Missing Response
+            { Result: 200, Response: null },  // Null Response
+            { Result: 200, Response: undefined }  // Undefined Response
+        ]
+
+        // 3. Test each malformed response
+        FOR each response IN MALFORMED_RESPONSES
+            MOCK_API_RESPONSE = response
+            
+            // Attempt update
+            result = await account.updateAccount()
+            
+            // Verify error handling
+            VERIFY result IS FALSE
+            VERIFY account.Nonce EQUALS initialNonce  // Nonce should not change
+            VERIFY account.lastError INCLUDES "Invalid response"
+            VERIFY account.lastError INCLUDES "Nonce"
+
+        // 4. Verify account state remains unchanged
+        VERIFY account.address EQUALS mockAddress
+        VERIFY account.publicKey IS_NOT_EMPTY
+        VERIFY account.info IS_NOT_EMPTY
+        ```
+
+    - **sign data method**
+      - [1.2.17] should throw an error if account is not open
+        ```pseudocode
+        // 1. Setup
+        account = NEW CEP_Account()
+        testData = "test data for signing"
+        testPrivateKey = "0x1234567890abcdef"
+
+        // 2. Attempt to sign without opening account
+        EXPECT_ERROR WHEN account.signData(testData, testPrivateKey) WITH {
+            message: "Account not open",
+            type: "AccountError"
+        }
+
+        // 3. Verify account remains in default state
+        VERIFY account.address IS EMPTY
+        VERIFY account.publicKey IS EMPTY
+        VERIFY account.info IS EMPTY
+        VERIFY account.Nonce IS 0
+        VERIFY account.LatestTxID IS ""
+        ```
+
+      - [1.2.18] should produce different signatures for different data
+        ```pseudocode
+        // 1. Setup
+        account = NEW CEP_Account()
+        account.open(mockAddress)
+        account.setNetwork("testnet")
+        testPrivateKey = "0x1234567890abcdef"
+
+        // 2. Test with different data types
+        TEST_DATA = [
+            "simple string",
+            "Hello 世界",  // Unicode
+            "Special chars: !@#$%^&*()",
+            "1234567890",
+            "0x1234567890abcdef",
+            "",  // Empty string
+            "   ",  // Whitespace
+            "a".repeat(1000)  // Long string
+        ]
+
+        // 3. Generate signatures for each data type
+        signatures = []
+        FOR each data IN TEST_DATA
+            signature = account.signData(data, testPrivateKey)
+            signatures.push(signature)
+            
+            // Verify signature format
+            VERIFY signature IS STRING
+            VERIFY signature.length GREATER THAN 0
+            VERIFY signature MATCHES /^[0-9a-f]+$/  // Should be hex
+
+        // 4. Verify all signatures are unique
+        FOR i = 0 TO signatures.length - 1
+            FOR j = i + 1 TO signatures.length - 1
+                VERIFY signatures[i] NOT EQUALS signatures[j]
+
+        // 5. Verify signatures are deterministic
+        FOR each data IN TEST_DATA
+            signature1 = account.signData(data, testPrivateKey)
+            signature2 = account.signData(data, testPrivateKey)
+            VERIFY signature1 EQUALS signature2
+        ```
+
+      - [1.2.19] should produce different signatures for different private keys
+        ```pseudocode
+        // 1. Setup
+        account = NEW CEP_Account()
+        account.open(mockAddress)
+        account.setNetwork("testnet")
+        testData = "test data for signing"
+
+        // 2. Test with different private keys
+        TEST_PRIVATE_KEYS = [
+            "0x" + "1".repeat(64),  // All ones
+            "0x" + "a".repeat(64),  // All a's
+            "0x" + "f".repeat(64),  // All f's
+            "0x" + "0".repeat(64),  // All zeros
+            "0x" + "5".repeat(64),  // All fives
+            "0x" + "9".repeat(64)   // All nines
+        ]
+
+        // 3. Generate signatures for each private key
+        signatures = []
+        FOR each key IN TEST_PRIVATE_KEYS
+            signature = account.signData(testData, key)
+            signatures.push(signature)
+            
+            // Verify signature format
+            VERIFY signature IS STRING
+            VERIFY signature.length GREATER THAN 0
+            VERIFY signature MATCHES /^[0-9a-f]+$/  // Should be hex
+
+        // 4. Verify all signatures are unique
+        FOR i = 0 TO signatures.length - 1
+            FOR j = i + 1 TO signatures.length - 1
+                VERIFY signatures[i] NOT EQUALS signatures[j]
+
+        // 5. Test with invalid private keys
+        INVALID_KEYS = [
+            "0x",                    // Too short
+            "0x123",                 // Invalid length
+            "0xabcdefghijklmnop",   // Invalid characters
+            "1234567890abcdef",     // Missing 0x prefix
+            null,                    // Null key
+            undefined,              // Undefined key
+            "",                     // Empty string
+            "not_a_hex_string"      // Non-hex string
+        ]
+
+        FOR each key IN INVALID_KEYS
+            EXPECT_ERROR WHEN account.signData(testData, key) WITH {
+                message: "Invalid private key",
+                type: "ValidationError"
+            }
+
+        // 6. Verify signature verification
+        FOR each key IN TEST_PRIVATE_KEYS
+            signature = account.signData(testData, key)
+            verificationResult = VERIFY_SIGNATURE(testData, signature, account.publicKey)
+            VERIFY verificationResult IS TRUE
+        ```
+
+    - **get transaction and get transaction by ID methods**
+      - [1.2.20] get transaction(BlockID, TxID) should fetch a transaction
+        ```pseudocode
+        // 1. Setup
+        account = NEW CEP_Account()
+        account.open(mockAddress)
+        account.setNetwork("testnet")
+        
+        // 2. Submit a test transaction first
+        testData = "test transaction data"
+        submitResult = await account.submitCertificate(testData, mockPrivateKey)
+        
+        // 3. Get transaction details
+        txResult = await account.getTransaction(
+            submitResult.blockNumber,
+            submitResult.TxID
+        )
+        
+        // 4. Verify transaction data
+        VERIFY txResult.Result EQUALS 200
+        VERIFY txResult.Response.id EQUALS submitResult.TxID
+        VERIFY txResult.Response.status IS_NOT "Pending"
+        VERIFY txResult.Response.data EQUALS testData
+        VERIFY txResult.Response.blockNumber EQUALS submitResult.blockNumber
+        VERIFY txResult.Response.timestamp IS NOT NULL
+        
+        // 5. Verify transaction metadata
+        VERIFY txResult.Response.signature IS NOT NULL
+        VERIFY txResult.Response.publicKey EQUALS account.publicKey
+        VERIFY txResult.Response.nonce EQUALS account.Nonce - 1  // Previous nonce
+        ```

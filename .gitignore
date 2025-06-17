@@ -6,3 +6,4 @@ result
 .env
 target
 flake.*
+.aider*

@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"log"
 
-	"circular-api/lib/cepaccount"
-	"circular-api/lib/ccertificate"
+	"circular-api/services"
+	"circular-api/models"
 )
 
 func main() {
 	log.Println("--- Testing CCertificate ---")
-	cert := ccertificate.NewCCertificate()
+	cert := models.NewCCertificate()
 	cert.SetData("Hello, Circular World!")
 
 	fmt.Println("Certificate Data (Plain):", cert.GetData())
@@ -28,7 +28,7 @@ func main() {
 	fmt.Printf("Certificate Size: %d bytes\n", size)
 
 	log.Println("\n--- Testing CEPAccount ---")
-	account := cepaccount.NewCEPAccount()
+	account := services.NewCEPAccount()
 
 	// Open an account
 	testAddress := "0x1234567890abcdef1234567890abcdef12345678"
