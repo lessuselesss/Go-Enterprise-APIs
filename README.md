@@ -72,7 +72,7 @@ To run the tests, you need to set up the following environment variables in a `.
 
 ```
 CIRCULAR_PRIVATE_KEY="your_64_character_private_key_here"
-CIRCULAR_ADDRESS="your_wallet_address_here"
+CIRCULAR_ADDRESS="your_account_address_here"
 ```
 
 The private key should be a 64-character (32-byte) hex string, and the address should be a valid Ethereum-style address (40 characters + 0x prefix).
