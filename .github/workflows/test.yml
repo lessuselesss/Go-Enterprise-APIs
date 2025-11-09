@@ -38,20 +38,35 @@ jobs:
       run: |
         echo 'CIRCULAR_PRIVATE_KEY="${{ secrets.CIRCULAR_PRIVATE_KEY }}"' > .env
         echo 'CIRCULAR_ADDRESS="${{ secrets.CIRCULAR_ADDRESS }}"' >> .env
+      env:
+        CIRCULAR_PRIVATE_KEY: ${{ secrets.CIRCULAR_PRIVATE_KEY }}
+        CIRCULAR_ADDRESS: ${{ secrets.CIRCULAR_ADDRESS }}
 
     - name: Run unit tests
       run: go test ./pkg/... -v -race -coverprofile=coverage.txt -covermode=atomic
+      env:
+        CIRCULAR_PRIVATE_KEY: ${{ secrets.CIRCULAR_PRIVATE_KEY }}
+        CIRCULAR_ADDRESS: ${{ secrets.CIRCULAR_ADDRESS }}
 
     - name: Run utility tests
       run: go test ./pkg/utils/... -v -race
+      env:
+        CIRCULAR_PRIVATE_KEY: ${{ secrets.CIRCULAR_PRIVATE_KEY }}
+        CIRCULAR_ADDRESS: ${{ secrets.CIRCULAR_ADDRESS }}
 
     - name: Run integration tests
       run: go test ./tests/integration/... -v -tags=integration_tests
       continue-on-error: true  # Don't fail if NAG is down
+      env:
+        CIRCULAR_PRIVATE_KEY: ${{ secrets.CIRCULAR_PRIVATE_KEY }}
+        CIRCULAR_ADDRESS: ${{ secrets.CIRCULAR_ADDRESS }}
 
     - name: Run e2e tests
       run: go test ./tests/e2e/... -v -tags=e2e
       continue-on-error: true  # Don't fail if NAG is down
+      env:
+        CIRCULAR_PRIVATE_KEY: ${{ secrets.CIRCULAR_PRIVATE_KEY }}
+        CIRCULAR_ADDRESS: ${{ secrets.CIRCULAR_ADDRESS }}
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4
